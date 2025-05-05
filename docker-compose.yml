@@ -1,0 +1,11 @@
+services:
+  upload_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: 
+      - .env  
+    volumes:
+      - /mnt/vfs:/app/mnt/vfs
+    restart: always
+    container_name: my_upload_container

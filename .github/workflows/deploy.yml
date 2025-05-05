@@ -1,0 +1,29 @@
+name: Auto Deploy Upload server to Vultr Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: SSH into Vultr and Deploy
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VULTR_SERVER_IP }}
+        username: ${{ secrets.VULTR_SERVER_USER }}
+        key: ${{ secrets.VULTR_SERVER_SSH_KEY }}
+        script: |
+          cd /upload_server
+          git pull origin main
+          docker-compose pull
+          docker-compose build
+          docker-compose up --build --no-deps --force-recreate -d ftps_server
+          docker image prune -f
+          exit 0
