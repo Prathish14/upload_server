@@ -28,10 +28,12 @@ class BotoB2:
             
         except Exception as e:
             error_msg = f'error upload_file content_type: {content_type} path:{file_name}, error: {e.__str__()}'
+            print(error_msg)
             return None
 
     @staticmethod
     async def upload_ftp_uploaded_image_to_event_bucket(content, content_type, file_name, event_id, event_user_id):
         file_path_raw = f"events/{event_id}/{event_user_id}/raw/{file_name}"
         raw_id = await BotoB2.upload_file_async(content, file_path_raw, content_type)
+        print(f"upload completed with raw_id:{raw_id} and file_path:{file_path_raw}")
         return raw_id, file_path_raw

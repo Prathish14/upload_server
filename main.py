@@ -34,6 +34,7 @@ async def process_file(file_path):
                                                                               event_id=event_id, event_user_id=event_user_id)
          
     if raw_id and uploaded_file_path:
+        print("now informing api about file uploded")
         await FotoowlInternalApis.send_uploded_image_info_to_event_picture_process(event_id=event_id, image_name=filename, mime_type=mime_type,
                                                                                   b2_id=raw_id, path=filename, user_id=event_user_id, 
                                                                                   height=img_height, width=img_width)

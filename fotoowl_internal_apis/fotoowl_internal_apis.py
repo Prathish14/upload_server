@@ -41,7 +41,7 @@ class FotoowlInternalApis:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=body) as response:
                     text = await response.text()
-                    print(text)
+                    print(f"after sending image info in process api, response code: {response.status}")
                     return response.status
 
         except Exception as e:
