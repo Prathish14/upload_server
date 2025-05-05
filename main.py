@@ -6,19 +6,27 @@ import numpy as np
 import cv2 as cv
 import mimetypes
 import time
+import logging
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from b2_upload_service.b2_uploader import BotoB2
 from fotoowl_internal_apis.fotoowl_internal_apis import FotoowlInternalApis
 
-WATCH_FOLDER = "/app/mnt/vfs"  # Change to your path if needed
+# ──────────────────────────────────────────────────────────────────────────────
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]  # stdout for Docker logs
+)
+
+# ──────────────────────────────────────────────────────────────────────────────
+WATCH_FOLDER = "/app/mnt/vfs"
 #WATCH_FOLDER = r"D:\Foto_Owl_dev\upload_server\temp"
 MAX_CONCURRENT_TASKS = 5
 queue = asyncio.Queue(100)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Utility: Check file is fully written
 def is_file_ready(file_path):
     try:
         initial_size = os.path.getsize(file_path)
@@ -27,8 +35,6 @@ def is_file_ready(file_path):
     except Exception:
         return False
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Utility: Decode image buffer
 def decode_image(content):
     try:
         jpg_as_np = np.frombuffer(content, dtype=np.uint8)
@@ -37,29 +43,24 @@ def decode_image(content):
             return img.shape[1], img.shape[0]  # width, height
         return None, None
     except Exception as e:
-        print(f"[decode_image] Error: {e}")
+        logging.error(f"[decode_image] Error: {e}", exc_info=True)
         return None, None
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Worker Task: Process a file from queue
 async def process_file(file_path):
     try:
-        print(f"[process_file] Start: {file_path}")
+        logging.info(f"[process_file] Start: {file_path}")
         filename = Path(file_path).name
         mime_type, _ = mimetypes.guess_type(file_path)
 
         async with aiofiles.open(file_path, 'rb') as file:
             binary_data = await file.read()
 
-        content = binascii.b2a_base64(binary_data).decode("utf8")
-        content = binascii.a2b_base64(content)
-
-        img_width, img_height = await asyncio.to_thread(decode_image, content)
+        # Removed unnecessary base64 transform
+        img_width, img_height = await asyncio.to_thread(decode_image, binary_data)
         if not img_width or not img_height:
-            print(f"[process_file] Skipping invalid image: {file_path}")
+            logging.warning(f"[process_file] Skipping invalid image: {file_path}")
             return
 
-        # Replace with dynamic event info if needed
         event_id = "1089"
         event_user_id = "j8NCXEn4MSXSqwBIJPrdPFvEfjY2"
 
@@ -82,21 +83,19 @@ async def process_file(file_path):
                 height=img_height,
                 width=img_width
             )
-        print(f"[process_file] Done: {file_path}")
+        logging.info(f"[process_file] Done: {file_path}")
 
     except Exception as e:
-        print(f"[process_file] Error: {e}")
-    
+        logging.error(f"[process_file] Error: {e}", exc_info=True)
+
     finally:
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
-                print(f"Deleted: {file_path}")
+                logging.info(f"[process_file] Deleted: {file_path}")
             except Exception as e:
-                print(f"Failed to delete {file_path}: {e}", exc_info=True)
+                logging.error(f"[process_file] Failed to delete {file_path}: {e}", exc_info=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Worker loop
 async def worker(name):
     while True:
         file_path = await queue.get()
@@ -104,8 +103,6 @@ async def worker(name):
             await process_file(file_path)
         queue.task_done()
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Watchdog Handler
 class FileCreatedHandler(FileSystemEventHandler):
     def __init__(self, loop):
         super().__init__()
@@ -113,41 +110,36 @@ class FileCreatedHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.lower().endswith((".jpg", ".jpeg", ".png")):
-            print(f"[watchdog] New file: {event.src_path}")
+            logging.info(f"[watchdog] New file: {event.src_path}")
             asyncio.run_coroutine_threadsafe(queue.put(event.src_path), self.loop)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main entrypoint
 async def main():
     loop = asyncio.get_running_loop()
+    logging.info("🚀 Upload server started")
 
-    # Start workers
     workers = [asyncio.create_task(worker(f"worker-{i}")) for i in range(MAX_CONCURRENT_TASKS)]
 
-    # Process existing files at startup
     for filename in os.listdir(WATCH_FOLDER):
         file_path = os.path.join(WATCH_FOLDER, filename)
         if os.path.isfile(file_path) and file_path.lower().endswith((".jpg", ".jpeg", ".png")):
-            print(f"[startup] Found existing file: {file_path}")
+            logging.info(f"[startup] Found existing file: {file_path}")
             await queue.put(file_path)
 
-    # Start folder observer
     event_handler = FileCreatedHandler(loop)
     observer = Observer()
     observer.schedule(event_handler, WATCH_FOLDER, recursive=False)
     observer.start()
-    print("[main] Watching folder...")
+    logging.info(f"[main] Watching folder: {WATCH_FOLDER}")
 
     try:
-        await asyncio.Event().wait()  # Infinite sleep to keep app alive
+        await asyncio.Event().wait()
     except KeyboardInterrupt:
-        print("[main] Shutting down...")
+        logging.info("[main] Shutting down...")
     finally:
         observer.stop()
         observer.join()
         for w in workers:
             w.cancel()
 
-# ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     asyncio.run(main())
