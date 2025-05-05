@@ -9,7 +9,7 @@ from pathlib import Path
 from b2_upload_service.b2_uploader import BotoB2
 from fotoowl_internal_apis.fotoowl_internal_apis import FotoowlInternalApis
 
-#WATCH_FOLDER = r"D:\Foto_Owl_dev\upload_server\temp"
+#WATCH_FOLDER = r"D:\Foto_Owl_dev\upload_server\temp "
 WATCH_FOLDER = "/app/mnt/vfs"
 
 async def process_file(file_path):
