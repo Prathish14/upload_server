@@ -82,12 +82,18 @@ async def process_file(file_path):
                 height=img_height,
                 width=img_width
             )
-
-        os.remove(file_path)
         print(f"[process_file] Done: {file_path}")
 
     except Exception as e:
         print(f"[process_file] Error: {e}")
+    
+    finally:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"Deleted: {file_path}")
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}", exc_info=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Worker loop
