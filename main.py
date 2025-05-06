@@ -61,7 +61,7 @@ async def process_file(file_path):
             logging.warning(f"[process_file] Skipping invalid image: {file_path}")
             return
 
-        event_id = "1089"
+        event_id = "1092"
         event_user_id = "j8NCXEn4MSXSqwBIJPrdPFvEfjY2"
 
         raw_id, uploaded_file_path = await BotoB2.upload_ftp_uploaded_image_to_event_bucket(
