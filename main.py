@@ -8,7 +8,7 @@ import mimetypes
 import time
 import logging
 from pathlib import Path
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 from asyncio import run_coroutine_threadsafe
 from b2_upload_service.b2_uploader import BotoB2
