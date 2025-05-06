@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from asyncio import run_coroutine_threadsafe
 from b2_upload_service.b2_uploader import BotoB2
 from fotoowl_internal_apis.fotoowl_internal_apis import FotoowlInternalApis
 
@@ -18,11 +19,11 @@ from fotoowl_internal_apis.fotoowl_internal_apis import FotoowlInternalApis
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]  # For docker logs
+    handlers=[logging.StreamHandler()]
 )
 
 WATCH_FOLDER = "/app/mnt/vfs"
-#WATCH_FOLDER=r"D:\Foto_Owl_dev\upload_server\temp"
+#WATCH_FOLDER = r"D:\Foto_Owl_dev\upload_server\temp"
 MAX_CONCURRENT_TASKS = 5
 queue = asyncio.Queue(100)
 
@@ -98,12 +99,18 @@ async def process_file(file_path):
 async def worker(name):
     while True:
         file_path = await queue.get()
+        logging.info(f"[{name}] Got file from queue: {file_path}")
         if is_file_ready(file_path):
             await process_file(file_path)
+        else:
+            logging.warning(f"[{name}] File not ready, skipping: {file_path}")
         queue.task_done()
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Updated Watchdog Handler with call_soon_threadsafe
+async def enqueue_with_delay(file_path):
+    await asyncio.sleep(1)
+    await queue.put(file_path)
+    logging.info(f"[enqueue] File queued: {file_path}")
+
 class FileCreatedHandler(FileSystemEventHandler):
     def __init__(self, loop):
         super().__init__()
@@ -111,25 +118,21 @@ class FileCreatedHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.lower().endswith((".jpg", ".jpeg", ".png")):
-            logging.info(f"[watchdog] New file: {event.src_path}")
-            self.loop.call_soon_threadsafe(asyncio.create_task, queue.put(event.src_path))
+            logging.info(f"[watchdog] New file detected: {event.src_path}")
+            run_coroutine_threadsafe(enqueue_with_delay(event.src_path), self.loop)
 
-# ──────────────────────────────────────────────────────────────────────────────
 async def main():
     loop = asyncio.get_running_loop()
     logging.info("🚀 Upload server started")
 
-    # Start workers
     workers = [asyncio.create_task(worker(f"worker-{i}")) for i in range(MAX_CONCURRENT_TASKS)]
 
-    # Enqueue existing files
     for filename in os.listdir(WATCH_FOLDER):
         file_path = os.path.join(WATCH_FOLDER, filename)
         if os.path.isfile(file_path) and file_path.lower().endswith((".jpg", ".jpeg", ".png")):
             logging.info(f"[startup] Found existing file: {file_path}")
             await queue.put(file_path)
 
-    # Start watchdog observer
     event_handler = FileCreatedHandler(loop)
     observer = Observer()
     observer.schedule(event_handler, WATCH_FOLDER, recursive=False)
@@ -137,7 +140,7 @@ async def main():
     logging.info(f"[main] Watching folder: {WATCH_FOLDER}")
 
     try:
-        await asyncio.Event().wait()  # Run forever
+        await asyncio.Event().wait()
     except KeyboardInterrupt:
         logging.info("[main] Shutting down...")
     finally:
@@ -146,6 +149,5 @@ async def main():
         for w in workers:
             w.cancel()
 
-# ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     asyncio.run(main())
