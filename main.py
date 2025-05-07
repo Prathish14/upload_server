@@ -13,6 +13,7 @@ from watchdog.events import FileSystemEventHandler
 from asyncio import run_coroutine_threadsafe
 from b2_upload_service.b2_uploader import BotoB2
 from fotoowl_internal_apis.fotoowl_internal_apis import FotoowlInternalApis
+from redis_service.redis_service import RedisClient
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging setup
@@ -22,8 +23,11 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+redis_client = RedisClient()
+
 WATCH_FOLDER = "/app/mnt/vfs"
 #WATCH_FOLDER = r"D:\Foto_Owl_dev\upload_server\temp"
+#WATCH_FOLDER=r"D:\Foto_Owl_dev\ftps_imp\image_storage"
 MAX_CONCURRENT_TASKS = 5
 queue = asyncio.Queue(100)
 
@@ -60,9 +64,11 @@ async def process_file(file_path):
         if not img_width or not img_height:
             logging.warning(f"[process_file] Skipping invalid image: {file_path}")
             return
+        
+        uploaded_file_info = await redis_client.get_upload_info(filename=filename)
 
-        event_id = "1092"
-        event_user_id = "j8NCXEn4MSXSqwBIJPrdPFvEfjY2"
+        event_id = uploaded_file_info.get("event_id")
+        event_user_id = uploaded_file_info.get("event_creator_id")
 
         raw_id, uploaded_file_path = await BotoB2.upload_ftp_uploaded_image_to_event_bucket(
             content=binary_data,
@@ -83,6 +89,8 @@ async def process_file(file_path):
                 height=img_height,
                 width=img_width
             )
+        
+        await redis_client.delete_upload_info_hash_set(filename=filename)
         logging.info(f"[process_file] Done: {file_path}")
 
     except Exception as e:
@@ -124,6 +132,7 @@ class FileCreatedHandler(FileSystemEventHandler):
 async def main():
     loop = asyncio.get_running_loop()
     logging.info("🚀 Upload server started")
+    await redis_client.initialize()
 
     workers = [asyncio.create_task(worker(f"worker-{i}")) for i in range(MAX_CONCURRENT_TASKS)]
 
